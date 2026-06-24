@@ -215,6 +215,13 @@ const DATA = [
 const F={org:"all",cat:"all",fmt:"all",stat:"all"};
 let SORT="dl"; // dl=締切近い順, date=開催日順
 
+// 開催日(ISO)を date 文字列から抽出（範囲・予選/本戦は開始日を採用）。全てR8=2026年。
+function eventKey(d){
+  const m=(d.date||"").match(/R8\/(\d+)\/(\d+)/);
+  if(!m) return "9999-99-99";
+  return "2026-"+String(m[1]).padStart(2,"0")+"-"+String(m[2]).padStart(2,"0");
+}
+
 function dlInfo(d){
   if(!d) return {days:null,cls:"unk",tag:"締切は要項参照",tcls:"t-soon",cardcls:"upcoming"};
   const dt=new Date(d+"T00:00:00"); dt.setHours(0,0,0,0);
@@ -256,7 +263,7 @@ function render(){
       if(ra===1) return ib.days-ia.days; // 締切済は新しく過ぎた順
       return 0;
     } else {
-      return (a.dl||"9999").localeCompare(b.dl||"9999");
+      return eventKey(a).localeCompare(eventKey(b));
     }
   });
 
