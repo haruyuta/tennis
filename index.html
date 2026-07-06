@@ -50,6 +50,11 @@
   .msg{font-size:12px;margin-top:8px;color:var(--today);}
   .msg.err{color:#FF8A8A;}
   .del{background:none;border:none;color:var(--muted);font-size:11px;text-decoration:underline;margin:0 0 8px;padding:2px 0;}
+  .warn{border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.6;}
+  .warn.low{background:#3A2E12;border:1px solid var(--lamp);color:#FFE6A6;}
+  .warn.empty{background:#3A1A1A;border:1px solid #FF8A8A;color:#FFD2D2;}
+  .warn a{color:inherit;font-weight:700;}
+  .lastdate{font-size:11px;color:var(--muted);margin-top:4px;}
 </style>
 </head>
 <body>
@@ -60,7 +65,7 @@
 const GID = "14un6e";
 const BASE = "http://chotto-ii.com/apps/mobile/?gid=" + GID + "&eid=";
 
-// イベント対応表（掲示板 2026/06/12時点）
+// イベント対応表（掲示板 2026/07/06時点）
 // 新しいイベントが追加されたら、この表に1行足してください。
 // 書式: {date:"YYYY-MM-DD", eid:"イベントID"},
 const builtinEvents = [
@@ -71,11 +76,14 @@ const builtinEvents = [
   {date:"2026-06-22", eid:"343359"},
   {date:"2026-06-24", eid:"343360"},
   {date:"2026-06-29", eid:"343361"},
-  {date:"2026-07-01", eid:"343362"}
+  {date:"2026-07-01", eid:"343362"},
+  {date:"2026-07-08", eid:"344412"}
 ];
 
 // 自動遷移までの表示時間（ミリ秒）。0なら即時遷移。
 const REDIRECT_DELAY = 800;
+// 「今後の練習」がこの件数以下になったら更新を促す警告を表示。
+const LOW_THRESHOLD = 2;
 // ========================================
 
 const STORE_KEY = "nighter:user-events";
@@ -131,9 +139,23 @@ if(!menuMode && upcoming.length){
 
 function renderMenu(){
   const past = allEvents().filter(e=>e.date < today).reverse();
+  const all = allEvents();
+  const lastDate = all.length ? all[all.length-1].date : null;
   let html =
     '<header><div class="eyebrow">月水ナイター</div><h1>出欠確認ランチャー</h1>' +
-    '<div class="sub">今日: ' + fmt(today).num + ' (' + fmt(today).dow + ')</div></header>';
+    '<div class="sub">今日: ' + fmt(today).num + ' (' + fmt(today).dow + ')</div>' +
+    (lastDate ? '<div class="lastdate">対応表: ' + fmt(lastDate).num + ' (' + fmt(lastDate).dow + ') まで登録済み</div>' : '') +
+    '</header>';
+
+  // ===== 期限切れ／残りわずかの警告 =====
+  const boardTop = 'http://chotto-ii.com/apps/mobile/?gid=' + GID;
+  if(upcoming.length === 0){
+    html += '<div class="warn empty">今後の練習が登録されていません。' +
+      '<a href="' + boardTop + '">掲示板</a>で最新のイベントを確認し、下のフォームから追加するか index.html の対応表を更新してください。</div>';
+  }else if(upcoming.length <= LOW_THRESHOLD){
+    html += '<div class="warn low">今後の練習が残り ' + upcoming.length + ' 件です。' +
+      '<a href="' + boardTop + '">掲示板</a>で次回以降のイベントを確認して追加しておくと安心です。</div>';
+  }
 
   if(upcoming.length){
     html += '<div class="section-label">今後の練習</div>';
