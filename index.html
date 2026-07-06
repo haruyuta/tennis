@@ -97,6 +97,15 @@ function saveUserEvents(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(userEvents)); }catch(e){}
 }
 
+// 掲示板の対応表(builtin)に取り込まれた手動追加イベントは、
+// 古い日付が localStorage に残って上書きを妨げないよう掃除する。
+(function pruneMerged(){
+  const ids = new Set(builtinEvents.map(e=>e.eid));
+  const before = userEvents.length;
+  userEvents = userEvents.filter(e=>!ids.has(e.eid));
+  if(userEvents.length !== before) saveUserEvents();
+})();
+
 const DOW = ["日","月","火","水","木","金","土"];
 function fmt(dstr){
   const d = new Date(dstr + "T00:00:00");
@@ -107,9 +116,12 @@ function todayStr(){
   return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0");
 }
 function allEvents(){
-  return [...builtinEvents, ...userEvents]
-    .filter((e,i,arr)=>arr.findIndex(x=>x.eid===e.eid)===i)
-    .sort((a,b)=>a.date.localeCompare(b.date));
+  // eidが同じ＝同じイベント。後勝ちで上書きし、掲示板(builtin)を正とする。
+  // これにより、同じeidを新しい日付で入れ直したときも確実に反映される。
+  const map = new Map();
+  for(const e of userEvents)    map.set(e.eid, {...e, user:true});
+  for(const e of builtinEvents) map.set(e.eid, {...e});
+  return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date));
 }
 
 const params = new URLSearchParams(location.search);
@@ -187,13 +199,13 @@ function renderMenu(){
   html += '<a class="board-link" href="http://chotto-ii.com/apps/mobile/?gid=' + GID + '">掲示板トップを開く（全イベント一覧）</a>';
 
   html +=
-    '<div class="addbox"><h2>イベントを追加（この端末のみ）</h2>' +
+    '<div class="addbox"><h2>イベントを追加／更新（この端末のみ）</h2>' +
     '<label>イベントページのURL</label>' +
     '<input type="text" id="urlInput" placeholder="http://chotto-ii.com/apps/mobile/?gid=14un6e&eid=343500" inputmode="url">' +
     '<label>練習日</label><input type="date" id="dateInput">' +
-    '<button id="addBtn" type="button">追加する</button>' +
+    '<button id="addBtn" type="button">追加／更新する</button>' +
     '<div class="msg" id="addMsg"></div>' +
-    '<div style="font-size:11px;color:var(--muted);margin-top:10px;">全員に反映するには GitHub 上の index.html の対応表を編集してください。</div></div>';
+    '<div style="font-size:11px;color:var(--muted);margin-top:10px;">同じイベントURL（eid）を入れ直すと日付が上書きされます。全員に反映するには GitHub 上の index.html の対応表を編集してください。</div></div>';
 
   document.getElementById("app").innerHTML = html;
 
@@ -204,7 +216,10 @@ function renderMenu(){
     const m = url.match(/eid=(\d+)/);
     if(!m){ msg.textContent="URLからイベントID（eid=数字）が見つかりません。"; msg.className="msg err"; return; }
     if(!date){ msg.textContent="練習日を選択してください。"; msg.className="msg err"; return; }
-    userEvents.push({date:date, eid:m[1], user:true});
+    const eid = m[1];
+    const idx = userEvents.findIndex(x=>x.eid===eid);
+    if(idx>=0) userEvents[idx].date = date;                 // 既存eidは日付を更新（重複追加を防ぎ、確実に反映）
+    else       userEvents.push({date:date, eid:eid, user:true});
     saveUserEvents();
     location.href = "?menu=1";
   };
