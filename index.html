@@ -145,8 +145,21 @@ if(!menuMode && upcoming.length){
       '<a href="?menu=1" style="color:var(--muted);">一覧・設定を開く（自動移動を止める）</a></div>' +
     '</div>';
   setTimeout(()=>{ location.replace(BASE + e.eid); }, REDIRECT_DELAY);
+}else if(!menuMode){
+  // ===== 期限切れ：軽いアナウンスのみ =====
+  renderExpiredNotice();
 }else{
   renderMenu();
+}
+
+function renderExpiredNotice(){
+  document.getElementById("app").innerHTML =
+    '<div class="splash">' +
+      '<div style="font-size:12px;letter-spacing:0.2em;color:var(--lamp);">月水ナイター</div>' +
+      '<div class="date" style="font-size:24px;margin-top:16px;">予定なし</div>' +
+      '<div class="dow">次回の練習は未登録です</div>' +
+      '<div class="note"><a href="?menu=1">一覧・イベント追加を開く</a></div>' +
+    '</div>';
 }
 
 function renderMenu(){
