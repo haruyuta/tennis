@@ -65,7 +65,7 @@
 const GID = "14un6e";
 const BASE = "http://chotto-ii.com/apps/mobile/?gid=" + GID + "&eid=";
 
-// イベント対応表（掲示板 2026/07/06時点）
+// イベント対応表（掲示板 2026/07/07時点）
 // 新しいイベントが追加されたら、この表に1行足してください。
 // 書式: {date:"YYYY-MM-DD", eid:"イベントID"},
 const builtinEvents = [
@@ -77,7 +77,12 @@ const builtinEvents = [
   {date:"2026-06-24", eid:"343360"},
   {date:"2026-06-29", eid:"343361"},
   {date:"2026-07-01", eid:"343362"},
-  {date:"2026-07-08", eid:"344412"}
+  {date:"2026-07-08", eid:"344412"},
+  {date:"2026-07-13", eid:"344413"},
+  {date:"2026-07-15", eid:"344414"},
+  {date:"2026-07-22", eid:"344415"},
+  {date:"2026-07-27", eid:"344416"},
+  {date:"2026-07-29", eid:"344417"}
 ];
 
 // 自動遷移までの表示時間（ミリ秒）。0なら即時遷移。
@@ -97,15 +102,6 @@ function saveUserEvents(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(userEvents)); }catch(e){}
 }
 
-// 掲示板の対応表(builtin)に取り込まれた手動追加イベントは、
-// 古い日付が localStorage に残って上書きを妨げないよう掃除する。
-(function pruneMerged(){
-  const ids = new Set(builtinEvents.map(e=>e.eid));
-  const before = userEvents.length;
-  userEvents = userEvents.filter(e=>!ids.has(e.eid));
-  if(userEvents.length !== before) saveUserEvents();
-})();
-
 const DOW = ["日","月","火","水","木","金","土"];
 function fmt(dstr){
   const d = new Date(dstr + "T00:00:00");
@@ -116,12 +112,9 @@ function todayStr(){
   return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0");
 }
 function allEvents(){
-  // eidが同じ＝同じイベント。後勝ちで上書きし、掲示板(builtin)を正とする。
-  // これにより、同じeidを新しい日付で入れ直したときも確実に反映される。
-  const map = new Map();
-  for(const e of userEvents)    map.set(e.eid, {...e, user:true});
-  for(const e of builtinEvents) map.set(e.eid, {...e});
-  return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date));
+  return [...builtinEvents, ...userEvents]
+    .filter((e,i,arr)=>arr.findIndex(x=>x.eid===e.eid)===i)
+    .sort((a,b)=>a.date.localeCompare(b.date));
 }
 
 const params = new URLSearchParams(location.search);
@@ -145,21 +138,8 @@ if(!menuMode && upcoming.length){
       '<a href="?menu=1" style="color:var(--muted);">一覧・設定を開く（自動移動を止める）</a></div>' +
     '</div>';
   setTimeout(()=>{ location.replace(BASE + e.eid); }, REDIRECT_DELAY);
-}else if(!menuMode){
-  // ===== 期限切れ：軽いアナウンスのみ =====
-  renderExpiredNotice();
 }else{
   renderMenu();
-}
-
-function renderExpiredNotice(){
-  document.getElementById("app").innerHTML =
-    '<div class="splash">' +
-      '<div style="font-size:12px;letter-spacing:0.2em;color:var(--lamp);">月水ナイター</div>' +
-      '<div class="date" style="font-size:24px;margin-top:16px;">予定なし</div>' +
-      '<div class="dow">次回の練習は未登録です</div>' +
-      '<div class="note"><a href="?menu=1">一覧・イベント追加を開く</a></div>' +
-    '</div>';
 }
 
 function renderMenu(){
@@ -212,13 +192,13 @@ function renderMenu(){
   html += '<a class="board-link" href="http://chotto-ii.com/apps/mobile/?gid=' + GID + '">掲示板トップを開く（全イベント一覧）</a>';
 
   html +=
-    '<div class="addbox"><h2>イベントを追加／更新（この端末のみ）</h2>' +
+    '<div class="addbox"><h2>イベントを追加（この端末のみ）</h2>' +
     '<label>イベントページのURL</label>' +
     '<input type="text" id="urlInput" placeholder="http://chotto-ii.com/apps/mobile/?gid=14un6e&eid=343500" inputmode="url">' +
     '<label>練習日</label><input type="date" id="dateInput">' +
-    '<button id="addBtn" type="button">追加／更新する</button>' +
+    '<button id="addBtn" type="button">追加する</button>' +
     '<div class="msg" id="addMsg"></div>' +
-    '<div style="font-size:11px;color:var(--muted);margin-top:10px;">同じイベントURL（eid）を入れ直すと日付が上書きされます。全員に反映するには GitHub 上の index.html の対応表を編集してください。</div></div>';
+    '<div style="font-size:11px;color:var(--muted);margin-top:10px;">全員に反映するには GitHub 上の index.html の対応表を編集してください。</div></div>';
 
   document.getElementById("app").innerHTML = html;
 
@@ -229,10 +209,7 @@ function renderMenu(){
     const m = url.match(/eid=(\d+)/);
     if(!m){ msg.textContent="URLからイベントID（eid=数字）が見つかりません。"; msg.className="msg err"; return; }
     if(!date){ msg.textContent="練習日を選択してください。"; msg.className="msg err"; return; }
-    const eid = m[1];
-    const idx = userEvents.findIndex(x=>x.eid===eid);
-    if(idx>=0) userEvents[idx].date = date;                 // 既存eidは日付を更新（重複追加を防ぎ、確実に反映）
-    else       userEvents.push({date:date, eid:eid, user:true});
+    userEvents.push({date:date, eid:m[1], user:true});
     saveUserEvents();
     location.href = "?menu=1";
   };
