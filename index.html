@@ -53,42 +53,37 @@
   .warn{border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.6;}
   .warn.low{background:#3A2E12;border:1px solid var(--lamp);color:#FFE6A6;}
   .warn.empty{background:#3A1A1A;border:1px solid #FF8A8A;color:#FFD2D2;}
+  .warn.offline{background:#26304A;border:1px solid var(--line);color:var(--muted);}
   .warn a{color:inherit;font-weight:700;}
   .lastdate{font-size:11px;color:var(--muted);margin-top:4px;}
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="app"><div class="splash"><div class="dow">読み込み中…</div></div></div>
 
 <script>
+"use strict";
 // ================= 設定 =================
 const GID = "14un6e";
 const BASE = "http://chotto-ii.com/apps/mobile/?gid=" + GID + "&eid=";
+const EVENTS_URL = "events.json";   // GitHub Actions が自動更新するデータファイル
 
-// イベント対応表（掲示板 2026/07/07時点）
-// 新しいイベントが追加されたら、この表に1行足してください。
-// 書式: {date:"YYYY-MM-DD", eid:"イベントID"},
-const builtinEvents = [
-  {date:"2026-06-08", eid:"342959"},
-  {date:"2026-06-10", eid:"342960"},
-  {date:"2026-06-15", eid:"342961"},
-  {date:"2026-06-17", eid:"342962"},
-  {date:"2026-06-22", eid:"343359"},
-  {date:"2026-06-24", eid:"343360"},
-  {date:"2026-06-29", eid:"343361"},
-  {date:"2026-07-01", eid:"343362"},
-  {date:"2026-07-08", eid:"344412"},
-  {date:"2026-07-13", eid:"344413"},
-  {date:"2026-07-15", eid:"344414"},
-  {date:"2026-07-22", eid:"344415"},
-  {date:"2026-07-27", eid:"344416"},
-  {date:"2026-07-29", eid:"344417"}
-];
+// events.json が取得できない場合(オフライン等)の非常用データ。
+// 通常は編集不要。events.json が正となる。
+const FALLBACK = {
+  updated: "",
+  events: [
+    {date:"2026-07-13", eid:"344413"},
+    {date:"2026-07-15", eid:"344414"},
+    {date:"2026-07-22", eid:"344415"},
+    {date:"2026-07-27", eid:"344416"},
+    {date:"2026-07-29", eid:"344417"}
+  ]
+};
 
-// 自動遷移までの表示時間（ミリ秒）。0なら即時遷移。
-const REDIRECT_DELAY = 800;
-// 「今後の練習」がこの件数以下になったら更新を促す警告を表示。
-const LOW_THRESHOLD = 2;
+const REDIRECT_DELAY = 800;   // 自動遷移までの表示時間(ms)
+const LOW_THRESHOLD = 2;      // 残り件数がこの値以下で警告
+const STALE_DAYS = 3;         // 自動更新が止まっているとみなす日数
 // ========================================
 
 const STORE_KEY = "nighter:user-events";
@@ -111,55 +106,90 @@ function todayStr(){
   const n = new Date();
   return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0");
 }
+
+// ===== 読み込んだデータの状態 =====
+let remoteEvents = [];   // events.json 由来
+let updatedAt = "";      // events.json の更新日時
+let offline = false;     // events.json の取得に失敗したか
+const today = todayStr();
+
 function allEvents(){
-  return [...builtinEvents, ...userEvents]
+  return [...remoteEvents, ...userEvents]
     .filter((e,i,arr)=>arr.findIndex(x=>x.eid===e.eid)===i)
     .sort((a,b)=>a.date.localeCompare(b.date));
 }
 
-const params = new URLSearchParams(location.search);
-const menuMode = params.has("menu") || location.hash === "#menu";
-
-const today = todayStr();
-const upcoming = allEvents().filter(e=>e.date >= today);
-
-if(!menuMode && upcoming.length){
-  // ===== 自動リダイレクト =====
-  const e = upcoming[0];
-  const f = fmt(e.date);
-  const isToday = e.date === today;
-  document.getElementById("app").innerHTML =
-    '<div class="splash">' +
-      '<div style="font-size:12px;letter-spacing:0.2em;color:var(--lamp);">月水ナイター</div>' +
-      '<div class="date">' + f.num + '</div>' +
-      '<div class="dow">(' + f.dow + ') ' + (isToday ? '今日の練習' : '次回の練習') + '</div>' +
-      '<div class="note">出欠ページへ移動中…<br>' +
-      '<a href="' + BASE + e.eid + '">移動しない場合はこちらをタップ</a><br><br>' +
-      '<a href="?menu=1" style="color:var(--muted);">一覧・設定を開く（自動移動を止める）</a></div>' +
-    '</div>';
-  setTimeout(()=>{ location.replace(BASE + e.eid); }, REDIRECT_DELAY);
-}else{
-  renderMenu();
+async function loadEvents(){
+  try{
+    const res = await fetch(EVENTS_URL + "?t=" + Date.now(), {cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    remoteEvents = data.events || [];
+    updatedAt = data.updated || "";
+  }catch(e){
+    offline = true;
+    remoteEvents = FALLBACK.events;
+    updatedAt = FALLBACK.updated;
+  }
 }
 
-function renderMenu(){
+function isStale(){
+  if(offline || !updatedAt) return offline;
+  const t = new Date(updatedAt).getTime();
+  if(isNaN(t)) return false;
+  return (Date.now() - t) > STALE_DAYS * 86400000;
+}
+
+async function main(){
+  await loadEvents();
+  const params = new URLSearchParams(location.search);
+  const menuMode = params.has("menu") || location.hash === "#menu";
+  const upcoming = allEvents().filter(e=>e.date >= today);
+
+  if(!menuMode && upcoming.length){
+    const e = upcoming[0];
+    const f = fmt(e.date);
+    const isToday = e.date === today;
+    document.getElementById("app").innerHTML =
+      '<div class="splash">' +
+        '<div style="font-size:12px;letter-spacing:0.2em;color:var(--lamp);">月水ナイター</div>' +
+        '<div class="date">' + f.num + '</div>' +
+        '<div class="dow">(' + f.dow + ') ' + (isToday ? '今日の練習' : '次回の練習') + '</div>' +
+        '<div class="note">出欠ページへ移動中…<br>' +
+        '<a href="' + BASE + e.eid + '">移動しない場合はこちらをタップ</a><br><br>' +
+        '<a href="?menu=1" style="color:var(--muted);">一覧・設定を開く(自動移動を止める)</a></div>' +
+      '</div>';
+    setTimeout(()=>{ location.replace(BASE + e.eid); }, REDIRECT_DELAY);
+  }else{
+    renderMenu(upcoming);
+  }
+}
+
+function renderMenu(upcoming){
   const past = allEvents().filter(e=>e.date < today).reverse();
   const all = allEvents();
   const lastDate = all.length ? all[all.length-1].date : null;
+  const updDisp = updatedAt ? updatedAt.replace("T"," ").slice(0,16) : "不明";
+
   let html =
     '<header><div class="eyebrow">月水ナイター</div><h1>出欠確認ランチャー</h1>' +
     '<div class="sub">今日: ' + fmt(today).num + ' (' + fmt(today).dow + ')</div>' +
-    (lastDate ? '<div class="lastdate">対応表: ' + fmt(lastDate).num + ' (' + fmt(lastDate).dow + ') まで登録済み</div>' : '') +
+    (lastDate ? '<div class="lastdate">イベント: ' + fmt(lastDate).num + ' (' + fmt(lastDate).dow + ') まで / 自動更新: ' + updDisp + '</div>' : '') +
     '</header>';
 
-  // ===== 期限切れ／残りわずかの警告 =====
   const boardTop = 'http://chotto-ii.com/apps/mobile/?gid=' + GID;
+
+  if(offline){
+    html += '<div class="warn offline">イベントデータ(events.json)を取得できませんでした。非常用データで表示しています。通信環境を確認してください。</div>';
+  }else if(isStale()){
+    html += '<div class="warn low">自動更新が ' + STALE_DAYS + ' 日以上行われていません。GitHub Actions の実行状況を確認してください。</div>';
+  }
+
   if(upcoming.length === 0){
     html += '<div class="warn empty">今後の練習が登録されていません。' +
-      '<a href="' + boardTop + '">掲示板</a>で最新のイベントを確認し、下のフォームから追加するか index.html の対応表を更新してください。</div>';
+      '<a href="' + boardTop + '">掲示板</a>で最新のイベントを確認してください(掲示板に登録されれば翌朝に自動反映されます)。急ぎの場合は下のフォームから追加できます。</div>';
   }else if(upcoming.length <= LOW_THRESHOLD){
-    html += '<div class="warn low">今後の練習が残り ' + upcoming.length + ' 件です。' +
-      '<a href="' + boardTop + '">掲示板</a>で次回以降のイベントを確認して追加しておくと安心です。</div>';
+    html += '<div class="warn low">今後の練習が残り ' + upcoming.length + ' 件です。掲示板に次回イベントが登録されれば自動で反映されます。</div>';
   }
 
   if(upcoming.length){
@@ -176,11 +206,11 @@ function renderMenu(){
       }
     });
   }else{
-    html += '<div class="section-label">今後のイベントが登録されていません。フォームから追加してください。</div>';
+    html += '<div class="section-label">今後のイベントが登録されていません。</div>';
   }
 
   if(past.length){
-    html += '<details><summary>終了した練習（' + past.length + '件）</summary>';
+    html += '<details><summary>終了した練習(' + past.length + '件)</summary>';
     past.forEach(e=>{
       const f = fmt(e.date);
       html += '<a class="event past" href="' + BASE + e.eid + '">' +
@@ -189,16 +219,16 @@ function renderMenu(){
     html += '</details>';
   }
 
-  html += '<a class="board-link" href="http://chotto-ii.com/apps/mobile/?gid=' + GID + '">掲示板トップを開く（全イベント一覧）</a>';
+  html += '<a class="board-link" href="' + boardTop + '">掲示板トップを開く(全イベント一覧)</a>';
 
   html +=
-    '<div class="addbox"><h2>イベントを追加（この端末のみ）</h2>' +
+    '<div class="addbox"><h2>イベントを追加(この端末のみ・応急用)</h2>' +
     '<label>イベントページのURL</label>' +
     '<input type="text" id="urlInput" placeholder="http://chotto-ii.com/apps/mobile/?gid=14un6e&eid=343500" inputmode="url">' +
     '<label>練習日</label><input type="date" id="dateInput">' +
     '<button id="addBtn" type="button">追加する</button>' +
     '<div class="msg" id="addMsg"></div>' +
-    '<div style="font-size:11px;color:var(--muted);margin-top:10px;">全員に反映するには GitHub 上の index.html の対応表を編集してください。</div></div>';
+    '<div style="font-size:11px;color:var(--muted);margin-top:10px;">通常は掲示板の内容が毎朝自動で反映されるため、このフォームは自動更新を待てない場合のみ使用してください。</div></div>';
 
   document.getElementById("app").innerHTML = html;
 
@@ -207,7 +237,7 @@ function renderMenu(){
     const url = document.getElementById("urlInput").value.trim();
     const date = document.getElementById("dateInput").value;
     const m = url.match(/eid=(\d+)/);
-    if(!m){ msg.textContent="URLからイベントID（eid=数字）が見つかりません。"; msg.className="msg err"; return; }
+    if(!m){ msg.textContent="URLからイベントID(eid=数字)が見つかりません。"; msg.className="msg err"; return; }
     if(!date){ msg.textContent="練習日を選択してください。"; msg.className="msg err"; return; }
     userEvents.push({date:date, eid:m[1], user:true});
     saveUserEvents();
@@ -222,6 +252,8 @@ function renderMenu(){
     };
   });
 }
+
+main();
 </script>
 </body>
 </html>
