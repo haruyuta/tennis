@@ -1,1 +1,35 @@
+name: update-events
 
+on:
+  schedule:
+    # JST 6:00 (UTC 21:00) に毎日実行
+    - cron: "0 21 * * *"
+  workflow_dispatch: {}   # 手動実行ボタン
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 掲示板からイベント取得
+        run: python scripts/update_events.py
+
+      - name: 変更があればコミット
+        run: |
+          if git diff --quiet events.json; then
+            echo "変更なし"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add events.json
+          git commit -m "events.json 自動更新 ($(date +'%Y-%m-%d' -d '+9 hours'))"
+          git push
