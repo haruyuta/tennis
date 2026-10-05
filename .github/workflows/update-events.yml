@@ -1,4 +1,6 @@
 name: update-events
+# v2: update_events.py を実行。取得失敗時はジョブを失敗させ(GitHubから通知メール)、
+#     取得したHTMLを artifact "board-debug" に保存して原因を確認できるようにする。
 
 on:
   schedule:
@@ -21,6 +23,14 @@ jobs:
 
       - name: 掲示板からイベント取得
         run: python scripts/update_events.py
+
+      - name: 失敗時は取得HTMLを保存
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-debug
+          path: debug/
+          if-no-files-found: ignore
 
       - name: 変更があればコミット
         run: |
